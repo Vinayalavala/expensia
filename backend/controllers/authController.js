@@ -3,9 +3,10 @@ const User = require("../models/User.js");
 const { JWT_SECRET, JWT_EXPIRATION } = process.env;
 
 // Generate JWT
-const generateToken = (id) => {
-  return jwt.sign({ id }, JWT_SECRET, {
-    expiresIn: JWT_EXPIRATION || "1h", // fallback if not set
+
+const generateToken = (userId) => {
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
   });
 };
 
@@ -66,29 +67,24 @@ exports.loginUser = async (req, res) => {
 
   try {
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Please fill in all fields" });
+      return res.status(400).json({ success: false, error: "Please fill in all fields" });
     }
 
-    const user = await User.findOne({ email });
+    // explicitly select password for comparison
+    const user = await User.findOne({ email }).select("+password");
     if (!user) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Invalid credentials" });
+      return res.status(400).json({ success: false, error: "Invalid credentials" });
     }
 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Invalid credentials" });
+      return res.status(400).json({ success: false, error: "Invalid credentials" });
     }
 
     res.status(200).json({
       success: true,
       message: "User logged in successfully",
-      user: sanitizeUser(user),
+      user: user.toJSON(), // safe JSON (password excluded)
       token: generateToken(user._id),
     });
   } catch (error) {
@@ -96,6 +92,7 @@ exports.loginUser = async (req, res) => {
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 };
+
 
 // =============================
 // Get user information
