@@ -15,7 +15,7 @@ export default function TripChat({ tripId }) {
   const endRef = useRef(null);
 
   const token = useMemo(() => localStorage.getItem("token"), []);
-  const apiBase = useMemo(() => BASE_URL || "http://localhost:4000", []);
+  const apiBase = useMemo(() => BASE_URL || "https://expensia-pi.vercel.app", []);
 
   const currentUserId = useMemo(() => {
     try {
