@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const helmet = require("helmet");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
+const mongoose = require("mongoose");
 
 dotenv.config();
 
@@ -20,7 +21,6 @@ const tripRoutes = require("./routes/tripRoutes.js");
 
 const Trip = require("./models/Trip.js");
 const TripMessage = require("./models/TripMessage.js");
-const User = require("./models/User.js");
 const { connectDB } = require("./config/db.js");
 
 const app = express();
@@ -48,7 +48,6 @@ app.use(
   })
 );
 
-// Disable caching for APIs
 app.use("/api", (req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
@@ -82,17 +81,16 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 const allowedOrigin = process.env.FRONTEND_URL || "https://expensia.vercel.app";
 
 const io = new SocketIOServer(server, {
-  transports: ["websocket"], // ✅ added (no polling delay)
+  transports: ["websocket"],
   cors: {
     origin: allowedOrigin,
     methods: ["GET", "POST"],
   },
 });
 
-// Make io available in controllers
 app.set("io", io);
 
-/* ───────── SOCKET AUTH (JWT) ───────── */
+/* ───────── SOCKET AUTH ───────── */
 
 io.use((socket, next) => {
   const token =
@@ -122,7 +120,6 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   console.log(`✅ User connected: ${socket.user.id}`);
 
-  // Join trip room
   socket.on("join-trip", async (tripId) => {
     try {
       const trip = await Trip.findById(tripId).select(
@@ -150,13 +147,13 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Handle messages (OPTIMIZED, NO DELETION)
-  socket.on("trip-message", ({ tripId, message }, ack) => {
+  /* ✅ FIXED MESSAGE HANDLER */
+  socket.on("trip-message", ({ tripId, message, clientId }) => {
     if (!tripId || !message) return;
 
-    // 🔹 Emit immediately (fixes delay)
-    const tempMessage = {
-      _id: Date.now(),
+    const serverMessage = {
+      _id: new mongoose.Types.ObjectId(),
+      clientId, // ⭐ IMPORTANT
       trip: tripId,
       message,
       user: {
@@ -164,15 +161,12 @@ io.on("connection", (socket) => {
         fullName: socket.user.fullName,
       },
       createdAt: new Date(),
-      pending: true,
     };
 
-    io.to(`trip:${tripId}`).emit("trip-message", tempMessage);
+    // 1️⃣ Emit immediately (no delay)
+    io.to(`trip:${tripId}`).emit("trip-message", serverMessage);
 
-    // optional ACK
-    ack && ack({ delivered: true });
-
-    // 🔹 Save message asynchronously (no blocking)
+    // 2️⃣ Save asynchronously
     process.nextTick(async () => {
       try {
         await TripMessage.create({
@@ -195,5 +189,5 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
